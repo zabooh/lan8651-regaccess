@@ -324,6 +324,115 @@ echo 1 > /sys/module/spi_core/parameters/debug
 - **Backup register values** before modifications
 - **Use reset functionality** for critical errors
 
+## 🔧 Technical Details: How Register Access Works
+
+### **Complete Data Flow**
+
+```
+User Command → Debugfs → TC6 Framework → SPI → LAN8651 Chip
+     ↓             ↓           ↓           ↓         ↓
+[echo read 0x...]→[debugfs]→[oa_tc6_*]→[SPI Bus]→[Register]
+```
+
+### **Core Functions for Register Access**
+
+The **[lan865x_debug_patch.patch](lan865x_debug_patch.patch)** leverages the existing **Linux OA TC6 Framework** functions:
+
+```c
+// READ a register
+ret = oa_tc6_read_register(priv->tc6, address, &value);
+
+// WRITE a register  
+ret = oa_tc6_write_register(priv->tc6, address, value);
+```
+
+### **Detailed Workflow**
+
+#### **1. User-Space Command:**
+```bash
+echo "read 0x10000" > /sys/kernel/debug/lan865x/reg_access
+```
+
+#### **2. Kernel Debugfs Handler:**
+```c
+static ssize_t lan865x_debugfs_reg_write(...) {
+    // Parse user input
+    sscanf(buf, "%15s 0x%x", cmd, &address);
+    
+    if (strcmp(cmd, "read") == 0) {
+        // ⭐ ACTUAL register access happens HERE:
+        ret = oa_tc6_read_register(priv->tc6, address, &value);
+        
+        dev_info(&priv->spi->dev, "REG READ 0x%08x = 0x%08x\n", 
+                address, value);
+    }
+}
+```
+
+#### **3. OA TC6 Framework (`oa_tc6_read_register`):**
+- **TC6 Protocol** (OPEN Alliance TC6 Standard)
+- **SPI Transaction** with chip-select, data frames
+- **Echo/Response verification** 
+- **Error handling** for bus errors
+
+#### **4. Hardware SPI Communication:**
+```
+SPI Master (LAN966x) ←→ SPI Slave (LAN8651)
+     ↓                        ↓
+[TC6 Command Frame]    [Register Access]
+[Address + R/W bit]    [Internal Bus]
+[Data payload]         [Register Value]
+```
+
+### **What is OA TC6?**
+
+**OA TC6** = **OPEN Alliance TC6** is the standard interface for 10BASE-T1S MAC-PHY chips:
+
+- **TC6 = 10BASE-T1x MACPHY Serial Interface**
+- **Implemented in:** `drivers/net/oa_tc6.c` (Linux Kernel)
+- **Functions:** `oa_tc6_read_register()`, `oa_tc6_write_register()`
+- **Protocol:** SPI-based with specialized frames
+
+### **Physical Layer Structure:**
+
+```c
+struct lan865x_priv {
+    struct oa_tc6 *tc6;        // ← TC6 interface handle
+    struct spi_device *spi;    // ← SPI device for hardware access
+    // ...
+};
+```
+
+**Register access flows through:**
+1. **`priv->tc6`** - TC6 framework handle
+2. **TC6 Framework** calls SPI transactions
+3. **SPI Bus** communicates with LAN8651 chip
+4. **LAN8651** performs internal register operations
+
+### **Why Use TC6 Framework?**
+
+**Without TC6 Framework** you would need to:
+- Manually construct SPI frames  
+- Calculate TC6 protocol headers
+- Implement echo/response verification
+- Write error detection and retry logic
+
+**With TC6 Framework:** 
+- **One line:** `oa_tc6_read_register(tc6, address, &value)`
+- **Complete protocol** handled automatically
+- **Error handling** included
+- **Standard compliant** (OPEN Alliance Spec)
+
+### **The Elegant Solution:**
+
+The **lan865x_debug_patch.patch** approach is brilliant because it:
+1. **Uses existing TC6 infrastructure** (already present in driver)
+2. **Only adds debugfs interface** (user-space access point)
+3. **Direct use** of existing `priv->tc6` structure
+4. **No SPI code needed** - TC6 framework does everything
+
+**Key insight:** The patch leverages already-working hardware communication and simply adds a debug interface on top! 🎉
+
 ## 🧪 Testing & Validation
 
 ### Test Tools
