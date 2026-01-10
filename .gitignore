@@ -1,0 +1,28 @@
+# Compiled binaries
+lan8651_ethtool_arm
+lan8651_ethtool_x86
+lan8651_access_arm
+lan8651_access_x86
+
+# Build artifacts
+*.o
+*.ko
+*.mod
+*.mod.c
+.*.cmd
+Module.symvers
+modules.order
+module-common.o
+
+# IDE files
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.bak
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
