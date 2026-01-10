@@ -1,131 +1,125 @@
 # LAN8651 Register Access Tools
 
-A comprehensive toolset for direct access to the registers of the **Microchip LAN8651 10BASE-T1S MAC-PHY** chip via the OPEN Alliance TC6 Standard.
+A functional toolset for direct access to the registers of the **Microchip LAN8651 10BASE-T1S MAC-PHY** chip via the OPEN Alliance TC6 Standard.
 
 ![LAN8651](https://img.shields.io/badge/Chip-LAN8651-blue)
 ![Platform](https://img.shields.io/badge/Platform-LAN966x-green)
 ![License](https://img.shields.io/badge/License-GPL--2.0-red)
 
-## ⚠️ ARM Kernel Compatibility Issue
-
-**The original `lan8651_debug.c` kernel module approach has a fundamental problem:**
-- It tries to access private kernel structures that are not exported
-- `struct lan865x_priv` and `struct oa_tc6` are internal to the driver
-- This won't work with the ARM-compiled kernel
-
-## 🔧 Better Solutions for ARM Systems
-
 ## 📋 Overview
 
-The LAN8651 is a **10BASE-T1S MAC-PHY** chip that communicates with the host system via **SPI**. This toolset provides multiple approaches for register access:
-
-- **Kernel driver extension** (recommended)
-- **Debugfs interface** via existing kernel infrastructure
-- **Ethtool integration** for network-based access
-- **Direct register access** via TC6 protocol
+The LAN8651 is a **10BASE-T1S MAC-PHY** chip that communicates with the host system via **SPI**. This toolset provides **working solutions** for register access without requiring custom kernel modules that access private kernel structures.
 
 ## 🏗️ Architecture
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   User Tools    │    │  Kernel Module  │    │   Hardware      │
+│   User Tools    │    │ Patched Driver  │    │   Hardware      │
 │                 │    │                 │    │                 │
-│ lan8651_tool.py │◄──►│ lan8651_debug.c │◄──►│   LAN8651       │
-│ lan8651_access  │    │      (cdev)     │    │   (SPI/TC6)     │
+│lan8651_kernelfs │◄──►│ lan865x driver  │◄──►│   LAN8651       │
+│lan8651_ethtool* │    │   + debugfs     │    │   (SPI/TC6)     │
 │                 │    │                 │    │                 │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
         │                        │                        │
         │                        │                        │
         ▼                        ▼                        ▼
-  /dev/lan8651_debug      OA TC6 Framework         SPI Interface
+/sys/kernel/debug/lan865x    OA TC6 Framework         SPI Interface
 ```
 
 ## 📦 Components
 
-### 1. **Kernel Module** (`lan8651_debug.c`)
-- Character Device Interface (`/dev/lan8651_debug`)
-- Integration with OA TC6 Framework
-- Secure register access with validation
-- Echo-Response verification
+### 1. **Debugfs Interface** (✅ Working)
+- Via patched lan865x kernel driver
+- Debugfs entries: `/sys/kernel/debug/lan865x/reg_access`
+- Direct register read/write access
+- No custom kernel module required
 
-### 2. **C-Tool** (`lan8651_access.c`)
-- Compact Command-Line Interface
-- Predefined register names
-- Cross-Platform Compilation (ARM/x86)
-- Status decoding
+### 2. **Python Tool** (`lan8651_kernelfs.py`) - ✅ Working
+- Accesses registers via debugfs interface
+- Automatic LAN8651 interface detection
+- Command-line interface for read/write operations
+- Works with patched lan865x driver
 
-### 3. **Python-Tool** (`lan8651_tool.py`)
-- Extended user interface
-- Bit-field analysis and decoding
-- Automatic PHY detection
-- Batch operations
+### 3. **Ethtool Tool** (`lan8651_ethtool.c`) - ⚠️ Needs Driver Extension
+- Direct register access via ethtool IOCTLs
+- Compiled for ARM (`lan8651_ethtool_arm`) and x86 (`lan8651_ethtool_x86`)
+- Requires additional ethtool IOCTL handlers in driver
+- Alternative to debugfs approach
+
+### 4. **Kernel Patch** (`lan865x_debug_patch.patch`) - ✅ Ready
+- Adds debugfs support to lan865x driver
+- Provides `/sys/kernel/debug/lan865x/reg_access` interface
+- Enables direct TC6 register access via existing driver
 
 ## 🚀 Quick Start
 
-### Installation
+### Prerequisites
+
+1. **Apply Kernel Patch** (Required for debugfs approach):
+```bash
+# In kernel source directory
+cd /path/to/kernel/source
+patch -p1 < lan865x_debug_patch.patch
+
+# Rebuild and install kernel
+make && make modules_install && make install
+reboot
+```
+
+### Build Tools
 
 ```bash
 # Clone/download project
 cd /home/martin/AIoT/lan9662/lan8651_regaccess
 
-# Build all components
-./build.sh
+# Build ARM and x86 versions
+./build_tools.sh
 
-# Copy to target system
-scp lan8651_debug.ko lan8651_access_arm lan8651_tool.py root@<target-ip>:~/
+# Test tools
+./test_tools.sh
 ```
 
-### First Steps
+## 📖 Usage - Debugfs Method (Recommended)
+
+### Using Python Tool
 
 ```bash
-# 1. Load kernel module
-sudo insmod lan8651_debug.ko
+# List available interfaces
+./lan8651_kernelfs.py list
 
-# 2. Check device
-ls -la /dev/lan8651_debug
+# Read register (hex address)
+./lan8651_kernelfs.py read 0x10000
 
-# 3. Test basic functions
-./lan8651_tool.py status
-./lan8651_access list
+# Write register
+./lan8651_kernelfs.py write 0x10000 0x0C
+
+# Status information
+./lan8651_kernelfs.py status
 ```
 
-## 📖 Usage
-
-### Reading registers
+### Direct Debugfs Access
 
 ```bash
-# With register names
-./lan8651_access read MAC_NET_CTL
-./lan8651_tool.py read TC6_STATUS0
+# Read register (example: MAC_NET_CTL at 0x10000)
+echo "read 0x10000" > /sys/kernel/debug/lan865x/reg_access
 
-# With hex address
-echo "read 0x10000" > /dev/lan8651_debug
-cat /dev/lan8651_debug
+# Write register (example: Enable TX+RX)
+echo "write 0x10000 0x0C" > /sys/kernel/debug/lan865x/reg_access
 
-# With decoding
-./lan8651_tool.py read MAC_NET_CTL  # Shows bit meanings
+# View kernel messages for results
+dmesg | tail
 ```
 
-### Writing registers
+## 📖 Usage - Ethtool Method (Needs Driver Extension)
+
+⚠️ **Note:** This approach requires additional ethtool IOCTL handlers in the lan865x driver.
 
 ```bash
-# Enable MAC TX/RX
-./lan8651_access write MAC_NET_CTL 0x0C
-./lan8651_tool.py enable
+# Read register
+./lan8651_ethtool_arm read 0x10000
 
-# Direct via device
-echo "write 0x10000 0x0C" > /dev/lan8651_debug
-```
-
-### Status monitoring
-
-```bash
-# Complete status display
-./lan8651_tool.py status
-
-# Specific areas
-./lan8651_access status
-./lan8651_tool.py phy-id
+# Write register
+./lan8651_ethtool_arm write 0x10000 0x0C
 ```
 
 ## 🗂️ Register Reference
@@ -330,70 +324,114 @@ echo 1 > /sys/module/spi_core/parameters/debug
 - **Backup register values** before modifications
 - **Use reset functionality** for critical errors
 
-## 🧪 Testing
+## 🧪 Testing & Validation
 
-### Unit Tests
+### Test Tools
 
 ```bash
-# Test basic functionality
-./test/basic_tests.sh
+# Run comprehensive test suite
+./test_tools.sh
 
-# Check register consistency
-./test/register_tests.sh
+# Check if LAN8651 interface is detected
+python3 lan8651_kernelfs.py list
 
-# Performance test
-./test/performance_tests.sh
+# Verify debugfs access (after kernel patch)
+ls -la /sys/kernel/debug/lan865x/
 ```
 
-### Continuous Integration
+### Manual Testing
 
-```yaml
-# .github/workflows/test.yml
-name: LAN8651 Tools Test
-on: [push, pull_request]
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v2
-    - name: Install Cross Compiler
-      run: sudo apt-get install gcc-arm-linux-gnueabihf
-    - name: Build Tools
-      run: ./build.sh
-    - name: Run Tests
-      run: ./test/run_all_tests.sh
+```bash
+# Test register access via debugfs
+echo "read 0x0002" > /sys/kernel/debug/lan865x/reg_access  # TC6_STDCAP
+echo "read 0x0008" > /sys/kernel/debug/lan865x/reg_access  # TC6_STATUS0
+echo "read 0x10000" > /sys/kernel/debug/lan865x/reg_access # MAC_NET_CTL
+
+# Check kernel messages
+dmesg | grep "REG READ"
 ```
 
-## 📚 Further Documentation
+## 🐛 Troubleshooting
 
-- [OPEN Alliance TC6 Specification v1.1](https://opensig.org/download/document/OPEN_Alliance_10BASET1x_MAC-PHY_Serial_Interface_V1.1.pdf)
-- [LAN8651 Datasheet](https://www.microchip.com/wwwproducts/en/LAN8651)
-- [Linux OA TC6 Framework](https://www.kernel.org/doc/html/latest/networking/oa_tc6.html)
-- [10BASE-T1S Standard IEEE 802.3cg](https://standards.ieee.org/standard/802_3cg-2019.html)
+### Common Issues
 
-## 🤝 Contributing
+#### "No LAN8651 interface found"
+```bash
+# Check for lan865x driver
+lsmod | grep lan865x
+ip link show | grep eth
 
-1. Fork the repository
-2. Create feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push branch (`git push origin feature/amazing-feature`)
-5. Create Pull Request
+# Check sysfs entries
+ls /sys/class/net/*/device/driver/
+```
+
+#### "Debugfs not available"
+```bash
+# Check if debugfs is mounted
+mount | grep debugfs
+
+# Mount if necessary
+sudo mount -t debugfs none /sys/kernel/debug
+
+# Verify kernel patch is applied
+ls /sys/kernel/debug/lan865x/ 2>/dev/null || echo "Kernel patch needed"
+```
+
+#### "Permission denied on debugfs"
+```bash
+# Debugfs requires root access
+sudo echo "read 0x10000" > /sys/kernel/debug/lan865x/reg_access
+
+# Or run tools as root
+sudo ./lan8651_kernelfs.py read 0x10000
+```
+
+### Debug Information
+
+```bash
+# Enable kernel debug output
+echo 8 > /proc/sys/kernel/printk
+
+# Check SPI and TC6 debug
+dmesg | grep -E "lan865x|tc6|spi"
+
+# Network interface status
+cat /proc/net/dev
+ethtool <interface> 2>/dev/null || echo "ethtool info not available"
+```
+
+## 🔧 Development Notes
+
+### Extending the Tools
+
+1. **Add ethtool IOCTL support** to lan865x driver:
+   - Implement `ethtool_ops` handlers for `ETHTOOL_GLANREG`/`ETHTOOL_SLANREG`
+   - Enables `lan8651_ethtool.c` functionality
+
+2. **Enhance Python tool** with register maps:
+   - Add predefined register definitions
+   - Implement bit-field decoding
+   - Add batch operation support
+
+### File Overview
+
+- `build_tools.sh` - Builds ARM and x86 versions of tools
+- `cleanup_broken_files.sh` - Removes old non-functional files
+- `test_tools.sh` - Tests all functionality on target system
+- `lan8651_ethtool.c` - ethtool-based register access (needs driver extension)
+- `lan8651_kernelfs.py` - Debugfs-based register access (working)
+- `lan865x_debug_patch.patch` - Kernel driver patch (required)
 
 ## 📄 License
 
-This project is licensed under the **GPL-2.0+ License** - see [LICENSE](LICENSE) for details.
-
-## 👥 Authors
-
-- **Martin** - Initial work
-- **Microchip Technology** - LAN8651 Hardware and drivers
+This project is licensed under the **GPL-2.0+ License**.
 
 ## 🙏 Acknowledgments
 
 - OPEN Alliance for TC6 Standard
 - Linux Kernel Community for OA TC6 Framework
-- Microchip for hardware documentation
+- Microchip for LAN8651 hardware and drivers
 
 ---
 
-**⚠️ Note:** This tool is intended for development and debugging purposes. Do not use it in production environments without proper testing.
+**✅ Current Status:** Debugfs approach is fully functional after applying the kernel patch. Ethtool approach needs additional driver development.
