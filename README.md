@@ -585,6 +585,104 @@ echo "read 0x10000" > /sys/kernel/debug/lan865x/reg_access
 dmesg | grep "REG READ\|DEBUG"
 ```
 
+### **Example Debug Output**
+
+#### **C Tool Debug Output:**
+
+**Debug Version (detailed with timestamps):**
+```
+[DEBUG 19284.113] main:251: === LAN8651 ETHTOOL REGISTER ACCESS TOOL ===
+[DEBUG 19284.113] main:252: Debug output is ENABLED
+[DEBUG 19284.113] main:253: Arguments: argc=3
+[DEBUG 19284.113] main:255:   argv[0] = './lan8651_ethtool_x86_debug'
+[DEBUG 19284.113] main:255:   argv[1] = 'read'
+[DEBUG 19284.113] main:255:   argv[2] = '0x10000'
+[DEBUG 19284.113] find_lan8651_interface:65: ENTER
+[DEBUG 19284.113] find_lan8651_interface:66: Looking for LAN8651 interface
+[DEBUG 19284.113] find_lan8651_interface:76: Successfully opened /proc/net/dev
+[DEBUG 19284.116] find_lan8651_interface:85: Processing interface: eth0
+[DEBUG 19284.116] find_lan8651_interface:97: Checking driver path: /sys/class/net/eth0/device/driver/module
+[DEBUG 19284.116] find_lan8651_interface:112: readlink failed: No such file or directory
+No LAN8651 interface found
+```
+
+**Release Version (minimal output):**
+```
+No LAN8651 interface found
+```
+
+#### **Python Tool Debug Output:**
+
+**Debug Version (with detailed interface detection):**
+```
+[01:15:43.656] DEBUG debug_print:33: Initializing LAN8651Debugfs class
+[01:15:43.656] DEBUG debug_print:33: Starting interface detection
+[01:15:43.656] DEBUG debug_print:33: Starting interface search
+[01:15:43.656] DEBUG debug_print:33: Searching for network devices with pattern: /sys/class/net/*/device/driver
+[01:15:43.657] DEBUG debug_print:33: Found 1 network device entries
+[01:15:43.658] DEBUG debug_print:33: [1/1] Processing device: /sys/class/net/eth0/device/driver
+[01:15:43.658] DEBUG debug_print:33: Reading driver link for: /sys/class/net/eth0/device/driver
+[01:15:43.658] DEBUG debug_print:33: Driver link target: ../../../../../../bus/vmbus/drivers/hv_netvsc
+[01:15:43.658] DEBUG debug_print:33: Driver 'hv_netvsc' is not lan865x, skipping
+[01:15:43.658] DEBUG debug_print:33: Searching for debugfs entries
+[01:15:43.658] DEBUG debug_print:33: Debugfs is mounted at /sys/kernel/debug
+[01:15:43.659] DEBUG debug_print:33: Checking 3 potential debug paths
+[01:15:43.659] DEBUG debug_print:33: [1/3] Checking debugfs path: /sys/kernel/debug/tc6
+[01:15:43.659] DEBUG debug_print:33: Debugfs path does not exist: /sys/kernel/debug/tc6
+```
+
+**Release Version (clean output):**
+```
+Known LAN8651 Registers:
+  0x00010000 - ID_REV       - Chip and Revision ID
+  0x00010001 - STATUS0      - Status Register 0
+```
+
+#### **Kernel Patch Debug Output (after patch application):**
+
+**Debugfs Interface Status:**
+```bash
+$ cat /sys/kernel/debug/lan865x/reg_access
+```
+```
+LAN865x Register Access Interface
+=================================
+Usage:
+  echo 'read 0x10000' > reg_access      - Read register
+  echo 'write 0x10000 0x0C' > reg_access - Write register
+  echo 'debug on' > reg_access          - Enable debug output
+  echo 'debug off' > reg_access         - Disable debug output
+
+Status:
+  Debug: OFF
+  Last operation: 0x00000000 = 0x00000000
+  SPI device: spi1.0
+  Network interface: eth0
+```
+
+**Kernel Log Output (dmesg):**
+```bash
+$ echo "debug on" > /sys/kernel/debug/lan865x/reg_access
+$ echo "read 0x10000" > /sys/kernel/debug/lan865x/reg_access
+$ dmesg | tail
+```
+```
+[12345.678] lan865x spi1.0: DEBUG: Received command: 'debug on'
+[12345.679] lan865x spi1.0: DEBUG: Debug output ENABLED
+[12345.680] lan865x spi1.0: DEBUG: Received command: 'read 0x10000'
+[12345.681] lan865x spi1.0: DEBUG: Starting READ operation: addr=0x00010000
+[12345.682] lan865x spi1.0: REG READ 0x00010000 = 0x12345678 (duration=234 us)
+[12345.683] lan865x spi1.0: DEBUG: READ completed successfully in 234 microseconds
+```
+
+#### **Debug Features Comparison:**
+
+| Tool | Debug Activation | Timestamp | Function Tracing | Error Details | Performance Timing |
+|------|------------------|-----------|------------------|---------------|-------------------|
+| **C Tool** | `-DDEBUG_ENABLED=1` | ✅ Kernel Time | ✅ ENTER/EXIT | ✅ errno + strerror | ✅ |
+| **Python Tool** | `LAN8651_DEBUG=1` | ✅ HH:MM:SS.ms | ✅ Step-by-step | ✅ Exception Details | ✅ |
+| **Kernel Patch** | `echo "debug on"` | ✅ Kernel Timestamp | ✅ Operation Tracing | ✅ Return Codes | ✅ Microseconds |
+
 ### Manual Testing
 
 ```bash
