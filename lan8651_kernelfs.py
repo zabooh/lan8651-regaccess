@@ -11,34 +11,84 @@ import glob
 import struct
 import subprocess
 import sys
+import time
+import logging
+import argparse
+from pathlib import Path
+
+# Debug output control
+DEBUG_ENABLED = os.environ.get('LAN8651_DEBUG', '0') == '1'
+
+# Setup logging
+logging.basicConfig(
+    level=logging.DEBUG if DEBUG_ENABLED else logging.INFO,
+    format='[%(asctime)s.%(msecs)03d] %(levelname)s %(funcName)s:%(lineno)d: %(message)s',
+    datefmt='%H:%M:%S'
+)
+logger = logging.getLogger(__name__)
+
+def debug_print(msg, *args):
+    """Print debug message if debug is enabled"""
+    if DEBUG_ENABLED:
+        logger.debug(msg, *args)
+        
+def info_print(msg, *args):
+    """Print info message"""
+    logger.info(msg, *args)
+
+def error_print(msg, *args):
+    """Print error message"""
+    logger.error(msg, *args)
 
 class LAN8651Debugfs:
     def __init__(self):
+        debug_print("Initializing LAN8651Debugfs class")
         self.debugfs_path = None
         self.sysfs_path = None
+        debug_print("Starting interface detection")
         self.find_interfaces()
+        debug_print("Initialization complete: debugfs_path=%s, sysfs_path=%s", 
+                   self.debugfs_path, self.sysfs_path)
     
     def find_interfaces(self):
         """Find LAN8651 network interfaces via sysfs"""
         
-        # Look for network interfaces using lan865x driver
-        net_devices = glob.glob("/sys/class/net/*/device/driver")
+        debug_print("Starting interface search")
         
-        for device_path in net_devices:
+        # Look for network interfaces using lan865x driver
+        net_device_pattern = "/sys/class/net/*/device/driver"
+        debug_print("Searching for network devices with pattern: %s", net_device_pattern)
+        net_devices = glob.glob(net_device_pattern)
+        debug_print("Found %d network device entries", len(net_devices))
+        
+        for i, device_path in enumerate(net_devices):
+            debug_print("[%d/%d] Processing device: %s", i+1, len(net_devices), device_path)
             try:
                 # Read the driver name
+                debug_print("Reading driver link for: %s", device_path)
                 driver_link = os.readlink(device_path)
+                debug_print("Driver link target: %s", driver_link)
+                
                 if "lan865x" in driver_link:
                     # Found a LAN8651 interface
                     iface_name = device_path.split('/')[-3]
+                    debug_print("Found LAN865x driver! Interface: %s", iface_name)
                     self.sysfs_path = f"/sys/class/net/{iface_name}/device"
-                    print(f"Found LAN8651 interface: {iface_name}")
+                    info_print("Found LAN8651 interface: %s", iface_name)
+                    debug_print("Set sysfs_path to: %s", self.sysfs_path)
                     break
-            except OSError:
+                else:
+                    debug_print("Driver '%s' is not lan865x, skipping", driver_link)
+            except OSError as e:
+                debug_print("OSError reading %s: %s", device_path, e)
                 continue
+        else:
+            debug_print("No LAN865x interfaces found in sysfs")
         
         # Look for debugfs entries
+        debug_print("Searching for debugfs entries")
         if os.path.exists("/sys/kernel/debug"):
+            debug_print("Debugfs is mounted at /sys/kernel/debug")
             # Check for TC6 or lan865x specific debug entries
             debug_paths = [
                 "/sys/kernel/debug/tc6",
@@ -46,11 +96,26 @@ class LAN8651Debugfs:
                 "/sys/kernel/debug/spi"
             ]
             
-            for path in debug_paths:
+            debug_print("Checking %d potential debug paths", len(debug_paths))
+            for i, path in enumerate(debug_paths):
+                debug_print("[%d/%d] Checking debugfs path: %s", i+1, len(debug_paths), path)
                 if os.path.exists(path):
+                    debug_print("Found debugfs entry: %s", path)
                     self.debugfs_path = path
-                    print(f"Found debug interface: {path}")
+                    info_print("Found debugfs interface: %s", path)
+                    
+                    # List contents for debugging
+                    try:
+                        contents = os.listdir(path)
+                        debug_print("Debugfs contents: %s", contents)
+                    except PermissionError as e:
+                        debug_print("Permission denied listing %s: %s", path, e)
                     break
+                else:
+                    debug_print("Debugfs path does not exist: %s", path)
+        else:
+            debug_print("Debugfs is not mounted at /sys/kernel/debug")
+            error_print("Debugfs not available - kernel may need CONFIG_DEBUG_FS=y")
     
     def read_via_debugfs(self, address):
         """Try to read register via debugfs if available"""
