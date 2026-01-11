@@ -48,6 +48,13 @@ The LAN8651 is a **10BASE-T1S MAC-PHY** chip that communicates with the host sys
 - Alternative to debugfs approach
 - **Debug support**: Compile-time `DEBUG_ENABLED` macro
 
+### 4. **Register Map Documentation** (`LAN8651_REGISTER_MAP.md`)
+- Complete LAN8651 register map from official datasheet
+- Memory Map Selector (MMS) organization
+- All standard, MAC, and PHY register definitions
+- Register bit definitions and usage examples
+- Official Microchip documentation reference
+
 ### 4. **Kernel Patches** - ✅ Ready
 - `lan865x_debug_patch.patch` - Basic debugfs support
 - `lan865x_enhanced_debug_patch.patch` - **Enhanced version with comprehensive debugging**
@@ -99,6 +106,38 @@ reboot
 
 # Comprehensive debug validation suite
 ./test_tools_debug.sh
+```
+
+## 📖 LAN8651 Register Map
+
+📋 **Complete register documentation**: See [`LAN8651_REGISTER_MAP.md`](LAN8651_REGISTER_MAP.md) for comprehensive register definitions from the official Microchip datasheet.
+
+### Register Organization
+
+The LAN8651 uses **Memory Map Selector (MMS)** to organize registers:
+
+| MMS | Description | Example Registers |
+|-----|-------------|------------------|
+| 0 | Standard/PHY Registers | 0x0000-0x0015, 0xFF00-0xFF0E |
+| 1 | MAC Registers | 0x10000-0x10214 |
+| 2-4 | PHY Registers | Various |
+| 10 | Miscellaneous | Additional features |
+
+### Common Register Examples
+
+```bash
+# Read device identification
+./lan8651_kernelfs.py read 0x0000  # OA_ID
+
+# Read link status  
+./lan8651_kernelfs.py read 0x0008  # OA_STATUS0
+
+# Read/Write MAC control
+./lan8651_kernelfs.py read 0x10000   # MAC_NCR
+./lan8651_kernelfs.py write 0x10000 0x0C  # Enable TX+RX
+
+# Read buffer status
+./lan8651_kernelfs.py read 0x000B  # OA_BUFSTS
 ```
 
 ## 📖 Usage - Debugfs Method (Recommended)

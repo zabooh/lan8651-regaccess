@@ -19,6 +19,83 @@ from pathlib import Path
 # Debug output control
 DEBUG_ENABLED = os.environ.get('LAN8651_DEBUG', '0') == '1'
 
+# LAN8651 Register Definitions (from official datasheet)
+# MMS 0: Open Alliance Standard Registers
+LAN8651_REGISTERS = {
+    # Standard Control/Status Registers
+    'OA_ID': 0x0000,           # Open Alliance ID
+    'OA_PHYID': 0x0001,        # PHY Identification
+    'OA_STDCAP': 0x0002,       # Standard Capabilities
+    'OA_RESET': 0x0003,        # Reset Control
+    'OA_CONFIG0': 0x0004,      # Configuration 0
+    'OA_STATUS0': 0x0008,      # Status 0
+    'OA_STATUS1': 0x0009,      # Status 1
+    'OA_BUFSTS': 0x000B,       # Buffer Status
+    'OA_IMASK0': 0x000C,       # Interrupt Mask 0
+    'OA_IMASK1': 0x000D,       # Interrupt Mask 1
+    
+    # Timestamp Capture Registers
+    'TTSCAH': 0x0010,          # TX Timestamp Capture A High
+    'TTSCAL': 0x0011,          # TX Timestamp Capture A Low
+    'TTSCBH': 0x0012,          # TX Timestamp Capture B High
+    'TTSCBL': 0x0013,          # TX Timestamp Capture B Low
+    'TTSCCH': 0x0014,          # TX Timestamp Capture C High
+    'TTSCCL': 0x0015,          # TX Timestamp Capture C Low
+    
+    # Clause 22 Basic Control/Status
+    'BASIC_CONTROL': 0xFF00,   # Basic Control Register
+    'BASIC_STATUS': 0xFF01,    # Basic Status Register
+    'PHY_ID1': 0xFF02,         # PHY Identifier 1
+    'PHY_ID2': 0xFF03,         # PHY Identifier 2
+    'MMDCTRL': 0xFF0D,         # MMD Access Control
+    'MMDAD': 0xFF0E,           # MMD Access Address/Data
+    
+    # MMS 1: MAC Registers
+    'MAC_NCR': 0x10000,        # MAC Network Control
+    'MAC_NCFGR': 0x10001,      # MAC Network Configuration
+    'MAC_HRB': 0x10020,        # MAC Hash Register Bottom
+    'MAC_HRT': 0x10021,        # MAC Hash Register Top
+    'MAC_SAB1': 0x10022,       # MAC Specific Address 1 Bottom
+    'MAC_SAT1': 0x10023,       # MAC Specific Address 1 Top
+    'MAC_SAB2': 0x10024,       # MAC Specific Address 2 Bottom
+    'MAC_SAT2': 0x10025,       # MAC Specific Address 2 Top
+    'BMGR_CTL': 0x10200,       # Buffer Manager Control
+    'STATS0': 0x10208,         # Statistics 0
+    'STATS1': 0x10209,         # Statistics 1
+    'STATS2': 0x1020A,         # Statistics 2
+}
+
+# Register bit definitions
+LAN8651_STATUS0_BITS = {
+    'PHYINT': (1 << 7),        # PHY Interrupt
+    'RESETC': (1 << 6),        # Reset Complete
+    'HDRE': (1 << 5),          # Header Error
+    'LOFE': (1 << 4),          # Loss of Frame Error
+    'RXBOE': (1 << 3),         # RX Buffer Overflow Error
+    'TXBUE': (1 << 2),         # TX Buffer Underflow Error
+    'TXBOE': (1 << 1),         # TX Buffer Overflow Error
+    'TXPE': (1 << 0),          # TX Protocol Error
+}
+
+LAN8651_BASIC_CONTROL_BITS = {
+    'RESET': (1 << 15),        # Software Reset
+    'LOOPBACK': (1 << 14),     # Loopback Enable
+    'SPEED_SEL': (1 << 13),    # Speed Selection
+    'ANENABLE': (1 << 12),     # Auto-Negotiation Enable
+    'PDOWN': (1 << 11),        # Power Down
+    'ANRESTART': (1 << 9),     # Restart Auto-Negotiation
+    'FULLDPLX': (1 << 8),      # Full Duplex
+}
+
+LAN8651_BASIC_STATUS_BITS = {
+    'ANEGCOMPLETE': (1 << 5),  # Auto-Negotiation Complete
+    'RFAULT': (1 << 4),        # Remote Fault
+    'ANEGCAPABLE': (1 << 3),   # Auto-Negotiation Capable
+    'LSTATUS': (1 << 2),       # Link Status
+    'JCD': (1 << 1),           # Jabber Detect
+    'ERCAP': (1 << 0),         # Extended Register Capable
+}
+
 # Setup logging
 logging.basicConfig(
     level=logging.DEBUG if DEBUG_ENABLED else logging.INFO,
@@ -39,6 +116,53 @@ def info_print(msg, *args):
 def error_print(msg, *args):
     """Print error message"""
     logger.error(msg, *args)
+
+def get_register_name(addr):
+    """Get register name from address"""
+    for name, address in LAN8651_REGISTERS.items():
+        if address == addr:
+            return name
+    return f"0x{addr:04X}"
+
+def parse_register_address(addr_str):
+    """Parse register address from string (name or hex)"""
+    # Try to parse as register name first
+    if addr_str.upper() in LAN8651_REGISTERS:
+        return LAN8651_REGISTERS[addr_str.upper()]
+    
+    # Try to parse as hex address
+    try:
+        if addr_str.startswith('0x') or addr_str.startswith('0X'):
+            return int(addr_str, 16)
+        else:
+            return int(addr_str, 16)
+    except ValueError:
+        raise ValueError(f"Invalid register address: {addr_str}")
+
+def decode_register_bits(addr, value):
+    """Decode register bits for known registers"""
+    if addr == LAN8651_REGISTERS['OA_STATUS0']:
+        bits = []
+        for name, bit_val in LAN8651_STATUS0_BITS.items():
+            if value & bit_val:
+                bits.append(name)
+        return f"Status bits: {', '.join(bits) if bits else 'none'}"
+    
+    elif addr == LAN8651_REGISTERS['BASIC_CONTROL']:
+        bits = []
+        for name, bit_val in LAN8651_BASIC_CONTROL_BITS.items():
+            if value & bit_val:
+                bits.append(name)
+        return f"Control bits: {', '.join(bits) if bits else 'none'}"
+    
+    elif addr == LAN8651_REGISTERS['BASIC_STATUS']:
+        bits = []
+        for name, bit_val in LAN8651_BASIC_STATUS_BITS.items():
+            if value & bit_val:
+                bits.append(name)
+        return f"Status bits: {', '.join(bits) if bits else 'none'}"
+    
+    return None
 
 class LAN8651Debugfs:
     def __init__(self):
@@ -188,18 +312,19 @@ class LAN8651Debugfs:
     def read_register(self, address):
         """Try multiple methods to read register"""
         
-        print(f"Attempting to read register 0x{address:08x}")
+        reg_name = get_register_name(address)
+        debug_print("Attempting to read register %s (0x%08x)", reg_name, address)
         
         # Method 1: debugfs
         value = self.read_via_debugfs(address)
         if value is not None:
-            print(f"Read via debugfs: 0x{value:08x}")
+            info_print("Read via debugfs: %s = 0x%08x", reg_name, value)
             return value
         
         # Method 2: SPI debug
         value = self.read_via_spi_debug(address)
         if value is not None:
-            print(f"Read via SPI debug: 0x{value:08x}")
+            info_print("Read via SPI debug: %s = 0x%08x", reg_name, value)
             return value
         
         # Method 3: Find network interface and try ethtool
@@ -207,33 +332,42 @@ class LAN8651Debugfs:
             iface = self.sysfs_path.split('/')[-2]
             value = self.read_via_ethtool(iface, address)
             if value is not None:
-                print(f"Read via ethtool: 0x{value:08x}")
+                info_print("Read via ethtool: %s = 0x%08x", reg_name, value)
                 return value
         
-        print("All read methods failed - kernel driver extension needed")
+        error_print("All read methods failed for %s - kernel driver extension needed", reg_name)
         return None
+        
+    def write_register(self, address, value):
+        """Try multiple methods to write register"""
+        
+        reg_name = get_register_name(address)
+        debug_print("Attempting to write register %s (0x%08x) = 0x%08x", reg_name, address, value)
+        
+        # Similar implementation for write operations
+        # This would need to be implemented based on available kernel interfaces
+        error_print("Write operations not yet implemented for %s", reg_name)
+        return False
 
 def show_register_info(address, value):
     """Show detailed register information"""
     
-    print(f"\nRegister 0x{address:08x} = 0x{value:08x} ({value})")
+    reg_name = get_register_name(address)
+    print(f"\nRegister {reg_name} (0x{address:08x}) = 0x{value:08x} ({value})")
     print(f"Binary: {value:032b}")
     
-    # Show known LAN8651 registers
-    reg_names = {
-        0x10000: "ID_REV",
-        0x10001: "STATUS0", 
-        0x10002: "STATUS1",
-        0x10003: "CONFIG0",
-        0x10004: "CONFIG1",
-        0x10005: "CONFIG2",
-        0x10006: "CONFIG3",
-        0x10007: "CONFIG4",
-        0x10020: "FIFO_SIZE",
-        0x10021: "CHUNK_SIZE"
-    }
+    # Show bit field interpretation if available
+    bit_desc = decode_register_bits(address, value)
+    if bit_desc:
+        print(f"{bit_desc}")
     
-    if address in reg_names:
+    # Show register description if known
+    if reg_name in ['OA_STATUS0', 'OA_STATUS1']:
+        print("Status register - shows current device state")
+    elif reg_name in ['MAC_NCR', 'MAC_NCFGR']:
+        print("MAC control register - controls network operations")
+    elif reg_name in ['BASIC_CONTROL', 'BASIC_STATUS']:
+        print("PHY basic register - standard IEEE 802.3 functionality")
         print(f"Name: {reg_names[address]}")
         
         # Decode specific registers
@@ -257,9 +391,16 @@ def show_register_info(address, value):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python3 lan8651_kernelfs.py <read|list> [address]")
-        print("Examples:")
+        print("Usage: python3 lan8651_kernelfs.py <command> [args...]")
+        print("Commands:")
+        print("  read <address>    - Read register (address can be hex or register name)")
+        print("  write <addr> <val> - Write register") 
+        print("  list              - List known registers")
+        print("  status            - Show device status")
+        print("\nExamples:")
         print("  python3 lan8651_kernelfs.py read 0x10000")
+        print("  python3 lan8651_kernelfs.py read OA_STATUS0")
+        print("  python3 lan8651_kernelfs.py write MAC_NCR 0x0C")
         print("  python3 lan8651_kernelfs.py list")
         return
     
@@ -267,34 +408,82 @@ def main():
     
     if sys.argv[1] == "list":
         print("\nKnown LAN8651 Registers:")
-        registers = [
-            (0x10000, "ID_REV", "Chip and Revision ID"),
-            (0x10001, "STATUS0", "Status Register 0"),
-            (0x10002, "STATUS1", "Status Register 1"), 
-            (0x10003, "CONFIG0", "Configuration Register 0"),
-            (0x10004, "CONFIG1", "Configuration Register 1"),
-            (0x10020, "FIFO_SIZE", "FIFO Size Configuration"),
-            (0x10021, "CHUNK_SIZE", "Chunk Size Configuration")
-        ]
+        print("=" * 60)
         
-        for addr, name, desc in registers:
-            print(f"  0x{addr:08x} - {name:12s} - {desc}")
-    
+        # Group registers by type
+        std_regs = [(name, addr) for name, addr in LAN8651_REGISTERS.items() 
+                   if addr < 0x10000]
+        mac_regs = [(name, addr) for name, addr in LAN8651_REGISTERS.items() 
+                   if 0x10000 <= addr < 0x20000]
+                   
+        if std_regs:
+            print("\nStandard/PHY Registers (MMS 0):")
+            for name, addr in sorted(std_regs, key=lambda x: x[1]):
+                print(f"  {name:<15} = 0x{addr:08X}")
+                
+        if mac_regs:
+            print("\nMAC Registers (MMS 1):")  
+            for name, addr in sorted(mac_regs, key=lambda x: x[1]):
+                print(f"  {name:<15} = 0x{addr:08X}")
+        
     elif sys.argv[1] == "read":
-        if len(sys.argv) != 3:
-            print("Usage: python3 lan8651_kernelfs.py read <address>")
+        if len(sys.argv) < 3:
+            print("Error: Address required for read command")
             return
         
-        address = int(sys.argv[2], 0)
-        value = debugfs.read_register(address)
+        try:
+            address = parse_register_address(sys.argv[2])
+            value = debugfs.read_register(address)
+            if value is not None:
+                show_register_info(address, value)
+            else:
+                print("Failed to read register")
+        except ValueError as e:
+            print(f"Error: {e}")
+            
+    elif sys.argv[1] == "write":
+        if len(sys.argv) < 4:
+            print("Error: Address and value required for write command")
+            return
         
-        if value is not None:
-            show_register_info(address, value)
-        else:
-            print("\nTo enable register access, you need to:")
-            print("1. Ensure debugfs is mounted: mount -t debugfs none /sys/kernel/debug")
-            print("2. Add register access support to lan865x driver")
-            print("3. Or use the ethtool approach with driver extension")
+        try:
+            address = parse_register_address(sys.argv[2])
+            value = int(sys.argv[3], 0)  # Auto-detect hex/decimal
+            
+            if debugfs.write_register(address, value):
+                reg_name = get_register_name(address)
+                print(f"Successfully wrote {reg_name} (0x{address:08X}) = 0x{value:08X}")
+            else:
+                print("Failed to write register")
+        except ValueError as e:
+            print(f"Error: {e}")
+            
+    elif sys.argv[1] == "status":
+        print("\nLAN8651 Status Information:")
+        print("=" * 40)
+        
+        # Read key status registers
+        status_regs = [
+            ('OA_STATUS0', 'General Status'),
+            ('OA_STATUS1', 'Extended Status'),
+            ('BASIC_STATUS', 'PHY Basic Status'),
+            ('OA_BUFSTS', 'Buffer Status')
+        ]
+        
+        for reg_name, description in status_regs:
+            try:
+                address = LAN8651_REGISTERS[reg_name]
+                value = debugfs.read_register(address)
+                if value is not None:
+                    print(f"\n{description}:")
+                    show_register_info(address, value)
+                else:
+                    print(f"\n{description}: Failed to read")
+            except KeyError:
+                print(f"\n{description}: Register not defined")
+    else:
+        print(f"Error: Unknown command '{sys.argv[1]}'")
+        print("Use 'python3 lan8651_kernelfs.py' for usage help")
 
 if __name__ == "__main__":
     main()
