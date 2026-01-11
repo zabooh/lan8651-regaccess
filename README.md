@@ -37,6 +37,9 @@ The LAN8651 is a **10BASE-T1S MAC-PHY** chip that communicates with the host sys
 ### 2. **Python Tool** (`lan8651_kernelfs.py`) - ✅ Working
 - Accesses registers via debugfs interface
 - Automatic LAN8651 interface detection
+- **Register name resolution**: Use `OA_STATUS0` instead of `0x0008`
+- **Comprehensive register database**: 30+ official registers from datasheet
+- **Bit field decoding**: Automatic interpretation of status/control bits
 - Command-line interface for read/write operations
 - Works with patched lan865x driver
 - **Debug support**: `LAN8651_DEBUG=1` environment variable
@@ -126,18 +129,24 @@ The LAN8651 uses **Memory Map Selector (MMS)** to organize registers:
 ### Common Register Examples
 
 ```bash
-# Read device identification
-./lan8651_kernelfs.py read 0x0000  # OA_ID
+# Read device identification (using register names)
+./lan8651_kernelfs.py read OA_ID          # Device ID
+./lan8651_kernelfs.py read OA_PHYID       # PHY ID
 
-# Read link status  
-./lan8651_kernelfs.py read 0x0008  # OA_STATUS0
+# Read status registers
+./lan8651_kernelfs.py read OA_STATUS0     # General status
+./lan8651_kernelfs.py read BASIC_STATUS   # PHY status
 
-# Read/Write MAC control
-./lan8651_kernelfs.py read 0x10000   # MAC_NCR
-./lan8651_kernelfs.py write 0x10000 0x0C  # Enable TX+RX
+# MAC control (with automatic bit decoding)
+./lan8651_kernelfs.py read MAC_NCR        # MAC control
+./lan8651_kernelfs.py write MAC_NCR 0x0C  # Enable TX+RX
 
-# Read buffer status
-./lan8651_kernelfs.py read 0x000B  # OA_BUFSTS
+# Buffer and statistics
+./lan8651_kernelfs.py read OA_BUFSTS      # Buffer status
+./lan8651_kernelfs.py read STATS0         # MAC statistics
+
+# Legacy hex addressing still supported
+./lan8651_kernelfs.py read 0x0008         # Same as OA_STATUS0
 ```
 
 ## 📖 Usage - Debugfs Method (Recommended)
@@ -145,22 +154,28 @@ The LAN8651 uses **Memory Map Selector (MMS)** to organize registers:
 ### Using Python Tool
 
 ```bash
-# List available interfaces
+# List all available registers with names and addresses
 ./lan8651_kernelfs.py list
 
-# Read register (hex address)
+# Read registers by name (recommended)
+./lan8651_kernelfs.py read OA_STATUS0     # Device status
+./lan8651_kernelfs.py read MAC_NCR        # MAC control
+./lan8651_kernelfs.py read BASIC_STATUS   # PHY status
+
+# Read by hex address (legacy support)
 ./lan8651_kernelfs.py read 0x10000
 
-# Write register
+# Write register (name or hex)
+./lan8651_kernelfs.py write MAC_NCR 0x0C
 ./lan8651_kernelfs.py write 0x10000 0x0C
 
-# Status information
+# Comprehensive status information
 ./lan8651_kernelfs.py status
 
 # Enable debug output
-LAN8651_DEBUG=1 ./lan8651_kernelfs.py read 0x10000
+LAN8651_DEBUG=1 ./lan8651_kernelfs.py read OA_STATUS0
 # OR use debug wrapper
-./lan8651_kernelfs_debug.py read 0x10000
+./lan8651_kernelfs_debug.py read OA_STATUS0
 ```
 
 ### Direct Debugfs Access
@@ -266,11 +281,89 @@ The debug test suite validates:
 - ✅ Kernel patch verification
 - ✅ Register access validation
 
+## � Enhanced Features (Latest Update)
+
+### **Register Name Resolution**
+Use intuitive register names instead of hex addresses:
+
+```bash
+# Instead of remembering hex addresses:
+./lan8651_kernelfs.py read 0x0008  
+
+# Use descriptive names:
+./lan8651_kernelfs.py read OA_STATUS0
+```
+
+**Available Register Names:**
+- **Standard Registers**: `OA_ID`, `OA_STATUS0`, `OA_CONFIG0`, `OA_RESET`
+- **MAC Registers**: `MAC_NCR`, `MAC_NCFGR`, `MAC_HRB`, `BMGR_CTL`
+- **PHY Registers**: `BASIC_CONTROL`, `BASIC_STATUS`, `PHY_ID1`, `PHY_ID2`
+- **Timestamp Registers**: `TTSCAH`, `TTSCAL`, `TTSCBH`, `TTSCBL`
+
+### **Automatic Bit Field Decoding**
+Smart interpretation of register values:
+
+```bash
+$ ./lan8651_kernelfs.py read OA_STATUS0
+Register OA_STATUS0 (0x00000008) = 0x00000042 (66)
+Binary: 00000000000000000000000001000010
+Status bits: RESETC, HDRE
+Status register - shows current device state
+```
+
+### **Comprehensive Register Listing**
+Quick overview of all available registers:
+
+```bash
+$ ./lan8651_kernelfs.py list
+Known LAN8651 Registers:
+============================================================
+
+Standard/PHY Registers (MMS 0):
+  OA_ID           = 0x00000000
+  OA_PHYID        = 0x00000001
+  OA_STDCAP       = 0x00000002
+  BASIC_CONTROL   = 0x0000FF00
+  BASIC_STATUS    = 0x0000FF01
+
+MAC Registers (MMS 1):
+  MAC_NCR         = 0x00010000
+  MAC_NCFGR       = 0x00010001
+  BMGR_CTL        = 0x00010200
+```
+
+### **Status Overview Command**
+Get comprehensive device status with one command:
+
+```bash
+$ ./lan8651_kernelfs.py status
+LAN8651 Status Information:
+========================================
+
+General Status:
+Register OA_STATUS0 (0x00000008) = 0x00000042 (66)
+Status bits: RESETC, HDRE
+
+PHY Basic Status:
+Register BASIC_STATUS (0x0000FF01) = 0x00007809 (30729)
+Status bits: LSTATUS, ANEGCAPABLE
+```
+
 ## 🗂️ Register Reference
 
-### MAC Register
+### Enhanced Register Tables (Based on Official Datasheet)
 
-| Register | Address | Bits | Description |
+### Core Standard Registers (MMS 0)
+
+| Register | Address | Key Bits | Description |
+|----------|---------|----------|-------------|
+| `OA_ID` | 0x0000 | [7:4,3:0] | Open Alliance ID (Major/Minor Version) |
+| `OA_PHYID` | 0x0001 | [31:0] | PHY OUI and Model Number |
+| `OA_STDCAP` | 0x0002 | [8] | Standard Capabilities |
+| `OA_RESET` | 0x0003 | [0] | Software Reset Control |
+| `OA_CONFIG0` | 0x0004 | [15,12] | SYNC, Configuration Enable |
+| `OA_STATUS0` | 0x0008 | [7:0] | Status Flags (PHYINT, RESETC, etc.) |
+| `OA_BUFSTS` | 0x000B | [15:8,7:0] | TX Credits, RX Buffer Available |
 |----------|---------|------|--------------|
 | `MAC_NET_CTL` | 0x00010000 | [3:2] | Network Control (TXEN, RXEN) |
 | `MAC_NET_CFG` | 0x00010001 | [7:4] | Network Config (Promiscuous, Multicast) |
@@ -384,16 +477,16 @@ echo "5. MAC Status:"
 
 ```python
 #!/usr/bin/env python3
-# Performance Monitor
+# Performance Monitor using LAN8651 register names
 
 import time
 import subprocess
 
-def read_register(reg):
-    result = subprocess.run(['./lan8651_access', 'read', reg], 
+def read_register(reg_name):
+    result = subprocess.run(['./lan8651_kernelfs.py', 'read', reg_name], 
                           capture_output=True, text=True)
     if "0x" in result.stdout:
-        return int(result.stdout.split("0x")[2].split()[0], 16)
+        return int(result.stdout.split("0x")[1].split()[0], 16)
     return 0
 
 print("LAN8651 Performance Monitor")
@@ -401,14 +494,17 @@ print("Press Ctrl+C to stop")
 
 try:
     while True:
-        # Read buffer status
-        buffer_status = read_register('TC6_BUFFER_STATUS')
+        # Read status using register names
+        status0 = read_register('OA_STATUS0')
+        buffer_status = read_register('OA_BUFSTS')
+        
+        # Decode buffer status
         tx_credits = (buffer_status >> 8) & 0xFF
         rx_chunks = buffer_status & 0xFF
         
         # Display status
         timestamp = time.strftime("%H:%M:%S")
-        print(f"{timestamp}: TX Credits: {tx_credits:3d}, RX Chunks: {rx_chunks:3d}")
+        print(f"{timestamp}: TX Credits: {tx_credits:3d}, RX Chunks: {rx_chunks:3d}, Status: 0x{status0:08X}")
         
         time.sleep(1)
         
@@ -438,27 +534,38 @@ cat /proc/net/dev              # Network devices
 
 #### Register access failed
 ```bash
-# Check TC6 status
-./lan8651_tool.py read TC6_STATUS0
+# Test basic connectivity using register names
+./lan8651_kernelfs.py read OA_ID          # Device identification
+./lan8651_kernelfs.py read OA_STATUS0     # General status
+./lan8651_kernelfs.py read BASIC_STATUS   # PHY status
 
-# Test SPI connection
-./lan8651_access read TC6_STDCAP
+# Check interface detection
+./lan8651_kernelfs.py list                # Show all registers
+LAN8651_DEBUG=1 ./lan8651_kernelfs.py read OA_ID  # Debug output
+
+# Test debugfs access
+ls -la /sys/kernel/debug/lan865x/
+echo "read 0x0000" > /sys/kernel/debug/lan865x/reg_access
 
 # Reset if necessary
-echo "write 0x3 0x1" > /dev/lan8651_debug  # Software Reset
+./lan8651_kernelfs.py write OA_RESET 0x1  # Software Reset
 ```
 
 ### Enable Debug Output
 
 ```bash
+# Python tool debug (shows register name resolution)
+LAN8651_DEBUG=1 ./lan8651_kernelfs.py read OA_STATUS0
+
 # Enable kernel debug
 echo 8 > /proc/sys/kernel/printk
 
-# Load module with debug
-modprobe lan8651_debug debug=1
+# Debug register access flow
+echo "debug on" > /sys/kernel/debug/lan865x/reg_access
+dmesg -w  # Watch live kernel messages
 
-# SPI debug (if available)
-echo 1 > /sys/module/spi_core/parameters/debug
+# List all available registers for debugging
+./lan8651_kernelfs.py list
 ```
 
 ## 🔒 Security Notes
