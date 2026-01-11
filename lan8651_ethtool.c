@@ -33,7 +33,7 @@
 #define DEBUG_ENTER() DEBUG_PRINT("ENTER")
 #define DEBUG_EXIT(ret) DEBUG_PRINT("EXIT with %d", ret)
 #define DEBUG_HEX_DUMP(data, len) do { \
-    DEBUG_PRINT("Hex dump (%d bytes):", len); \
+    DEBUG_PRINT("Hex dump (%zu bytes):", (size_t)len); \
     for(int i = 0; i < len; i++) { \
         fprintf(stderr, "%02X ", ((unsigned char*)data)[i]); \
         if((i+1) % 16 == 0) fprintf(stderr, "\n"); \
